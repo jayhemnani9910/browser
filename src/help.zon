@@ -96,6 +96,9 @@
     \\                                 PNG image (base64 with --json).
     \\              semantic_tree      JSON-serialized semantic tree.
     \\              semantic_tree_text Pruned plain-text semantic tree.
+    \\              structured_data    Page metadata as JSON: JSON-LD, OpenGraph,
+    \\                                 Twitter card, meta and link tags. Same
+    \\                                 output as the MCP structuredData tool.
     \\  --dump-max-bytes <INT>
     \\          Soft cap on the dumped html or markdown, in bytes. Output is cut
     \\          at a UTF-8 boundary and a '[truncated]' marker is appended.

@@ -522,6 +522,10 @@ fn dumpContent(app: *App, mode: Config.DumpFormat, opts: FetchOpts, frame: *Fram
                 try st.textStringify(writer);
             }
         },
+        .structured_data => {
+            const data = try structured_data.collectStructuredData(state.root, arena.allocator(), frame);
+            try std.json.Stringify.value(data, .{}, writer);
+        },
         .wpt => try dumpWPT(frame, writer),
     }
 }
@@ -708,6 +712,24 @@ test "fetch: resolveWaitUntil" {
         .networkidle,
         resolveWaitUntil(.{ .dump = .{}, .wait_until = .networkidle, .wait_selector = "#main" }),
     );
+}
+
+test "fetch: dump structured_data" {
+    defer testing.test_session.closeAllPages();
+    const page = try testing.pageTest("dump_structured_data.html", .{});
+
+    var aw: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer aw.deinit();
+    try dumpContent(testing.test_app, .structured_data, .{ .dump = .{} }, page.frame().?, &aw.writer);
+
+    try testing.expectJson(.{
+        .jsonLd = &.{
+            \\{"@context":"https://schema.org","@type":"Product","name":"Blue Kettle","offers":{"@type":"Offer","price":"39.00","priceCurrency":"EUR"}}
+        },
+        .openGraph = .{ .title = "Blue Kettle", .type = "product" },
+        .meta = .{ .language = "en", .title = "Blue Kettle", .description = "A 1.5 L kettle" },
+        .links = .{ .canonical = "http://127.0.0.1:9582/products/blue-kettle" },
+    }, aw.written());
 }
 
 test {

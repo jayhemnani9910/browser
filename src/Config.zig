@@ -1020,6 +1020,7 @@ pub const DumpFormat = enum {
     wpt,
     semantic_tree,
     semantic_tree_text,
+    structured_data,
 };
 
 pub const WaitUntil = enum {
