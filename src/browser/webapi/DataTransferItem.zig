@@ -77,6 +77,7 @@ fn getAsFile(self: *const DataTransferItem) ?*File {
 // missing callback are no-ops, per spec.
 pub fn getAsString(self: *const DataTransferItem, cb_: ?js.Function) !void {
     const cb = cb_ orelse return;
+    if (self._data_transfer._mode == .protected) return;
     const s = switch (self._payload) {
         .string => |str| str,
         .file => return,
