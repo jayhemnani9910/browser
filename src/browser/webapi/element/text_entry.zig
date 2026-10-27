@@ -103,7 +103,7 @@ pub fn TextEntry(comptime T: type) type {
 
         // forward == delete
         // !forward == backspace
-        pub fn innerDelete(self: *T, forward: bool, input_type: []const u8, frame: *Frame) !void {
+        pub fn innerDelete(self: *T, forward: bool, word: bool, input_type: []const u8, frame: *Frame) !void {
             const current_value = self.getValue();
             const value_len: u32 = @intCast(current_value.len);
 
@@ -120,7 +120,15 @@ pub fn TextEntry(comptime T: type) type {
                 .none => {
                     // Controls without a caret (e.g. date) edit at the end.
                     const caret = if (tracksSelection(self)) @min(self._selection_start, value_len) else value_len;
-                    if (forward) {
+                    if (word) {
+                        start, end = if (forward)
+                            .{ caret, caretTarget(current_value, caret, .word_forward) }
+                        else
+                            .{ caretTarget(current_value, caret, .word_backward), caret };
+                        if (start == end) {
+                            return;
+                        }
+                    } else if (forward) {
                         if (caret >= value_len) {
                             return;
                         }
@@ -192,7 +200,7 @@ pub fn TextEntry(comptime T: type) type {
             try applySelectionRange(self, len, len, .none, frame);
         }
 
-        pub const CaretMove = enum { backward, forward, line_start, line_end };
+        pub const CaretMove = enum { backward, forward, word_backward, word_forward, line_start, line_end };
 
         // Default action of the caret movement keys (ArrowLeft, ArrowRight,
         // Home, End). With `extend` (Shift held) the selection's focus moves
@@ -228,6 +236,9 @@ pub fn TextEntry(comptime T: type) type {
             } else if (start != end and (move == .backward or move == .forward)) {
                 new_start = if (move == .backward) start else end;
                 new_end = new_start;
+            } else if (move == .word_backward or move == .word_forward) {
+                new_start = caretTarget(value, if (move == .word_backward) start else end, move);
+                new_end = new_start;
             } else {
                 new_start = caretTarget(value, if (move == .backward) start else end, move);
                 new_end = new_start;
@@ -260,6 +271,27 @@ pub fn TextEntry(comptime T: type) type {
                     const next = pos + (std.unicode.utf8ByteSequenceLength(value[pos]) catch 1);
                     return @intCast(@min(next, value.len));
                 },
+                // Chrome on Linux: skip blanks, then a run of word characters or
+                // of punctuation; a line break is a unit of its own. Backward
+                // stops at the start of the run, forward at its end.
+                .word_backward => {
+                    var p = pos;
+                    while (p > 0 and wordClass(value, p - 1) == .blank) p -= 1;
+                    if (p == 0) return 0;
+                    const class = wordClass(value, p - 1);
+                    if (class == .line_break) return p - 1;
+                    while (p > 0 and wordClass(value, p - 1) == class) p -= 1;
+                    return p;
+                },
+                .word_forward => {
+                    var p = pos;
+                    while (p < value.len and wordClass(value, p) == .blank) p += 1;
+                    if (p >= value.len) return @intCast(value.len);
+                    const class = wordClass(value, p);
+                    if (class == .line_break) return p + 1;
+                    while (p < value.len and wordClass(value, p) == class) p += 1;
+                    return p;
+                },
                 .line_start => {
                     const nl = std.mem.findScalarLast(u8, value[0..pos], '\n') orelse return 0;
                     return @intCast(nl + 1);
@@ -269,6 +301,20 @@ pub fn TextEntry(comptime T: type) type {
                     return @intCast(nl);
                 },
             }
+        }
+
+        const WordClass = enum { blank, line_break, word, punctuation };
+
+        // Bytes of multi-byte UTF-8 sequences count as word characters, so a
+        // run of non-ASCII letters (or CJK) is one word. An apostrophe between
+        // word characters belongs to the word ("it's").
+        fn wordClass(value: []const u8, i: usize) WordClass {
+            const c = value[i];
+            if (c == '\n') return .line_break;
+            if (c == ' ' or c == '\t' or c == '\r') return .blank;
+            if (c >= 0x80 or c == '_' or std.ascii.isAlphanumeric(c)) return .word;
+            if (c == '\'' and i > 0 and i + 1 < value.len and wordClass(value, i - 1) == .word and wordClass(value, i + 1) == .word) return .word;
+            return .punctuation;
         }
 
         pub fn getSelectionDirection(self: *const T) []const u8 {

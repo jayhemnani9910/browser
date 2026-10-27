@@ -1601,24 +1601,44 @@ fn editKey(frame: *Frame, keyboard_event: *KeyboardEvent, ctl: anytype, key: Key
         return ctl.select(frame);
     }
 
+    // Chrome on Linux: Ctrl moves and deletes by word; Alt and Meta
+    // variants do nothing.
+    const ctrl = keyboard_event.getCtrlKey();
+    if (keyboard_event.getAltKey() or keyboard_event.getMetaKey()) {
+        return;
+    }
+
     if (caretMove(key, ctl)) |move| {
-        // Word/paragraph motions (ctrl/alt/meta variants) aren't modeled.
-        if (keyboard_event.getCtrlKey() or keyboard_event.getAltKey() or keyboard_event.getMetaKey()) {
-            return;
+        if (ctrl) {
+            const word_move: @TypeOf(move) = switch (move) {
+                .backward => .word_backward,
+                .forward => .word_forward,
+                // Ctrl+Home/End and paragraph moves aren't modeled.
+                else => return,
+            };
+            return ctl.moveCaret(word_move, keyboard_event.getShiftKey(), frame);
         }
         return ctl.moveCaret(move, keyboard_event.getShiftKey(), frame);
     }
 
     if (key == .Backspace or key == .Delete) {
-        const edit: Edit = .{ .delete = if (key == .Delete) .forward else .backward };
+        // Ctrl+Shift+Backspace (delete to the line start) isn't modeled.
+        if (ctrl and keyboard_event.getShiftKey()) {
+            return;
+        }
+        const dir: Delete = if (key == .Delete) .forward else .backward;
+        const edit: Edit = if (ctrl) .{ .delete_word = dir } else .{ .delete = dir };
         _ = try applyEdit(frame, ctl, edit);
     }
 }
 
+pub const Delete = enum { backward, forward };
+
 pub const Edit = union(enum) {
     insert: []const u8,
     line_break,
-    delete: enum { backward, forward },
+    delete: Delete,
+    delete_word: Delete,
 };
 
 /// A text edit as the user makes it: cancellable through beforeinput, and
@@ -1639,6 +1659,7 @@ pub fn applyEdit(frame: *Frame, ctl: anytype, edit: Edit) !bool {
         .insert => |t| .{ t, t, "insertText" },
         .line_break => .{ null, "\n", "insertLineBreak" },
         .delete => |dir| .{ null, null, if (dir == .forward) "deleteContentForward" else "deleteContentBackward" },
+        .delete_word => |dir| .{ null, null, if (dir == .forward) "deleteWordForward" else "deleteWordBackward" },
     };
     if (!try allowEdit(frame, el, data, text, input_type)) {
         return false;
@@ -1651,7 +1672,11 @@ pub fn applyEdit(frame: *Frame, ctl: anytype, edit: Edit) !bool {
     if (text) |t| {
         try ctl.innerInsert(t, data, input_type, frame);
     } else {
-        try ctl.innerDelete(edit.delete == .forward, input_type, frame);
+        switch (edit) {
+            .delete => |dir| try ctl.innerDelete(dir == .forward, false, input_type, frame),
+            .delete_word => |dir| try ctl.innerDelete(dir == .forward, true, input_type, frame),
+            else => unreachable,
+        }
     }
     return true;
 }
