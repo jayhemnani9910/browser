@@ -87,6 +87,59 @@ pub fn splitAxisPair(value: []const u8) ?AxisPair {
     return .{ .x = x, .y = y };
 }
 
+/// A four-side shorthand such as `margin`: its longhands in top, right,
+/// bottom, left order.
+pub const BoxShorthand = struct {
+    name: []const u8,
+    sides: [4][]const u8,
+};
+
+pub const box_shorthands = [_]BoxShorthand{
+    .{ .name = "margin", .sides = .{ "margin-top", "margin-right", "margin-bottom", "margin-left" } },
+    .{ .name = "padding", .sides = .{ "padding-top", "padding-right", "padding-bottom", "padding-left" } },
+    .{ .name = "inset", .sides = .{ "top", "right", "bottom", "left" } },
+    .{ .name = "border-width", .sides = .{ "border-top-width", "border-right-width", "border-bottom-width", "border-left-width" } },
+    .{ .name = "border-style", .sides = .{ "border-top-style", "border-right-style", "border-bottom-style", "border-left-style" } },
+    .{ .name = "border-color", .sides = .{ "border-top-color", "border-right-color", "border-bottom-color", "border-left-color" } },
+};
+
+pub fn boxShorthand(name: []const u8) ?BoxShorthand {
+    for (box_shorthands) |shorthand| {
+        if (std.ascii.eqlIgnoreCase(name, shorthand.name)) {
+            return shorthand;
+        }
+    }
+    return null;
+}
+
+/// The index in `box_shorthands` of the shorthand `name` is a side of.
+pub fn boxLonghandIndex(name: []const u8) ?usize {
+    for (box_shorthands, 0..) |shorthand, i| {
+        for (shorthand.sides) |side| {
+            if (std.ascii.eqlIgnoreCase(name, side)) {
+                return i;
+            }
+        }
+    }
+    return null;
+}
+
+/// One to four values for top, right, bottom and left, filled in the CSS way:
+/// a missing left takes right, a missing bottom takes top, a missing right
+/// takes top. More than four values is invalid and null, as is an empty
+/// declaration.
+pub fn splitBoxSides(value: []const u8) ?[4][]const u8 {
+    var it = std.mem.tokenizeAny(u8, value, &std.ascii.whitespace);
+    const top = it.next() orelse return null;
+    const right = it.next() orelse top;
+    const bottom = it.next() orelse top;
+    const left = it.next() orelse right;
+    if (it.next() != null) {
+        return null;
+    }
+    return .{ top, right, bottom, left };
+}
+
 const TokenSpan = struct {
     token: Tokenizer.Token,
     start: usize,

@@ -415,3 +415,22 @@
   testing.expectEqual('50px', cs.getPropertyValue('width'));
 }
 </script>
+
+<script id=boxShorthands>
+{
+  // A four-side shorthand sets its longhands and reads back from them.
+  const d = document.createElement('div');
+  d.style.margin = '1px 2px 3px';
+  testing.expectEqual('2px', d.style.marginLeft);
+  testing.expectEqual('3px', d.style.marginBottom);
+  testing.expectEqual('1px 2px 3px', d.style.margin);
+  d.style.marginLeft = '4px';
+  testing.expectEqual('1px 2px 3px 4px', d.style.margin);
+  d.style.removeProperty('margin');
+  testing.expectEqual('', d.style.marginTop);
+
+  d.style.cssText = 'padding: 5px';
+  testing.expectEqual('5px', d.style.paddingRight);
+  testing.expectEqual('5px', d.style.padding);
+}
+</script>
